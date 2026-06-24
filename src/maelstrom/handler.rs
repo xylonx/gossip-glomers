@@ -4,9 +4,9 @@ use serde::{Serialize, de::DeserializeOwned};
 use tracing::error;
 
 use crate::maelstrom::{
-    NodeId,
     error::{Error, Result},
     message::{Message, MessageId},
+    runtime::Runtime,
 };
 
 pub trait Handler {
@@ -36,9 +36,9 @@ pub trait Handler {
 
     fn handle(
         &self,
-        src: &NodeId,
+        runtime: &Runtime<Self::T>,
         msg_id: Option<MessageId>,
         in_reply_to: Option<MessageId>,
-        payload: &Self::T,
+        payload: Self::T,
     ) -> impl Future<Output = Result<Option<(Option<MessageId>, Self::T)>>>;
 }

@@ -19,9 +19,25 @@ pub struct Message<T> {
     pub body: MessageBody<T>,
 }
 
+pub struct MessageMeta {
+    pub src: NodeId,
+    pub dest: NodeId,
+    pub msg_id: Option<MessageId>,
+    pub in_reply_to: Option<MessageId>,
+}
+
 impl<T> Message<T> {
-    pub fn reply_to<S>(
-        source: &Message<S>,
+    pub fn meta(&self) -> MessageMeta {
+        MessageMeta {
+            src: self.src.clone(),
+            dest: self.dest.clone(),
+            msg_id: self.body.msg_id,
+            in_reply_to: self.body.in_reply_to,
+        }
+    }
+
+    pub fn reply_to(
+        source: &MessageMeta,
         msg_id: Option<MessageId>,
         payload: MessagePayload<T>,
     ) -> Self {
@@ -30,7 +46,7 @@ impl<T> Message<T> {
             dest: source.src.clone(),
             body: MessageBody {
                 msg_id,
-                in_reply_to: source.body.msg_id.clone(),
+                in_reply_to: source.msg_id.clone(),
                 payload,
             },
         }
