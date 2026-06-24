@@ -1,4 +1,4 @@
-.PHONY: maelstrom-echo maelstrom-uniq-id
+.PHONY: maelstrom-echo maelstrom-uniq-id maelstrom-broadcast-single-node
 
 MAELSTROM=${HOME}/repo/maelstrom/maelstrom/maelstrom
 
@@ -13,3 +13,10 @@ uniq-ids-bin: ./src/bin/uniq-ids.rs
 
 maelstrom-uniq-id: uniq-ids-bin
 	$(MAELSTROM) test -w unique-ids --bin ./target/debug/uniq-ids --time-limit 30 --rate 1000 --node-count 3 --availability total --nemesis partition
+
+broadcast-bin: ./src/bin/broadcast.rs
+	cargo build --bin broadcast
+
+maelstrom-broadcast-single-node: broadcast-bin
+	$(MAELSTROM) test -w broadcast --bin ./target/debug/broadcast --node-count 1 --time-limit 20 --rate 10
+
