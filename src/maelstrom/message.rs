@@ -5,7 +5,19 @@ use serde::{Deserialize, Serialize};
 use crate::maelstrom::{NodeId, error::Error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct MessageId(i64);
+pub struct MessageId(u64);
+
+impl MessageId {
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl From<u64> for MessageId {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message<T> {

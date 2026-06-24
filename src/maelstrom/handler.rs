@@ -38,7 +38,6 @@ pub trait Handler {
         &self,
         runtime: &Runtime<Self::T>,
         msg_id: Option<MessageId>,
-        in_reply_to: Option<MessageId>,
         payload: Self::T,
     ) -> impl Future<Output = Result<Option<(Option<MessageId>, Self::T)>>>;
 }

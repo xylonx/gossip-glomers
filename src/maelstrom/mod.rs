@@ -163,7 +163,7 @@ impl<H: Handler> Serve<H> {
 
             message::MessagePayload::Custom(payload) => Ok(self
                 .handler
-                .handle(runtime, msg.body.msg_id, msg.body.in_reply_to, payload)
+                .handle(runtime, msg.body.msg_id, payload)
                 .await?
                 .map(|(msg_id, payload)| {
                     Message::reply_to(&meta, msg_id, MessagePayload::Custom(payload))
