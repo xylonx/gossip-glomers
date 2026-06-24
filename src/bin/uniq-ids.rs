@@ -4,7 +4,11 @@ use std::{
 };
 
 use gossip_glomers::maelstrom::{
-    Serve, error::Result, handler::Handler, message::MessageId, runtime::Runtime,
+    Serve,
+    error::Result,
+    handler::Handler,
+    message::{MessageId, MessageMeta},
+    runtime::Runtime,
 };
 use serde::{Deserialize, Serialize};
 use tokio::io::{BufReader, BufWriter};
@@ -46,7 +50,7 @@ impl Handler for UniqueIdHandler {
     async fn handle(
         &self,
         runtime: &Runtime<Self::T>,
-        _: Option<MessageId>,
+        _: MessageMeta,
         _: Self::T,
     ) -> Result<Option<(Option<MessageId>, Self::T)>> {
         let next_id = self.counter.get_or_init(|| {

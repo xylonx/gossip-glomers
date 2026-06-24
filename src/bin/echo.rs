@@ -4,7 +4,7 @@ use gossip_glomers::maelstrom::{
     Serve,
     error::{Error, Result},
     handler::Handler,
-    message::MessageId,
+    message::{MessageId, MessageMeta},
     runtime::Runtime,
 };
 use serde::{Deserialize, Serialize};
@@ -28,8 +28,8 @@ impl Handler for EchoHandler {
 
     async fn handle(
         &self,
-        runtime: &Runtime<Self::T>,
-        msg_id: Option<MessageId>,
+        _runtime: &Runtime<Self::T>,
+        _meta: MessageMeta,
         payload: Self::T,
     ) -> Result<Option<(Option<MessageId>, Self::T)>> {
         let msg_id = self.msg_id.fetch_add(1, Ordering::AcqRel);

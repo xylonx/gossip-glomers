@@ -93,10 +93,7 @@ impl<H: Handler> Serve<H> {
             }
         };
 
-        tokio::select! {
-            _ = input_handler => {},
-            _ = output_handler => {},
-        }
+        tokio::join!(input_handler, output_handler);
     }
 
     async fn handle_request(
@@ -140,7 +137,7 @@ impl<H: Handler> Serve<H> {
             }
         };
 
-        info!(?runtime.node, "handle line with node initialized");
+        info!(?runtime.node, ?msg, "handle line with node initialized");
 
         if msg.dest != runtime.node.id {
             warn!(?runtime.node.id, ?msg.dest, "received message to others. Drop it");
@@ -168,7 +165,7 @@ impl<H: Handler> Serve<H> {
 
             message::MessagePayload::Custom(payload) => Ok(self
                 .handler
-                .handle(runtime, msg.body.msg_id, payload)
+                .handle(runtime, meta.clone(), payload)
                 .await?
                 .map(|(msg_id, payload)| {
                     Message::reply_to(&meta, msg_id, MessagePayload::Custom(payload))

@@ -5,7 +5,7 @@ use tracing::error;
 
 use crate::maelstrom::{
     error::{Error, Result},
-    message::{Message, MessageId},
+    message::{Message, MessageId, MessageMeta},
     runtime::Runtime,
 };
 
@@ -37,7 +37,7 @@ pub trait Handler {
     fn handle(
         &self,
         runtime: &Runtime<Self::T>,
-        msg_id: Option<MessageId>,
+        msg_meta: MessageMeta,
         payload: Self::T,
     ) -> impl Future<Output = Result<Option<(Option<MessageId>, Self::T)>>>;
 }

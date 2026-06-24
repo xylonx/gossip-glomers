@@ -31,6 +31,7 @@ pub struct Message<T> {
     pub body: MessageBody<T>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageMeta {
     pub src: NodeId,
     pub dest: NodeId,
