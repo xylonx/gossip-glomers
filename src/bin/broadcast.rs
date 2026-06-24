@@ -1,21 +1,27 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use gossip_glomers::maelstrom::{
     NodeId, Serve,
     error::{Error, Result},
     handler::Handler,
-    message::MessageId,
+    message::{MessageId, MessageMeta},
     runtime::Runtime,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{BufReader, BufWriter},
-    sync::RwLock,
+    sync::{
+        OnceCell, RwLock,
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+    },
 };
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,13 +29,13 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 enum BroadcastPayload {
     Broadcast {
         // The value is always an integer and it is unique for each message from Maelstrom.
-        message: u64,
+        message: i64,
     },
     BroadcastOk,
 
     Read,
     ReadOk {
-        messages: Vec<u64>,
+        messages: Vec<i64>,
     },
 
     /// Maelstrom has multiple topologies available or you can ignore this message
@@ -47,9 +53,36 @@ enum BroadcastPayload {
 ///
 #[derive(Debug, Default)]
 struct BroadcastHandler {
-    msg_id: AtomicU64,
+    counter: Arc<AtomicU64>,
 
-    messages: RwLock<HashSet<u64>>,
+    messages: RwLock<HashSet<i64>>,
+
+    broadcast: OnceCell<Vec<(NodeId, UnboundedSender<i64>)>>,
+}
+
+async fn propagate(
+    counter: Arc<AtomicU64>,
+    runtime: Runtime<BroadcastPayload>,
+    node_id: NodeId,
+    mut rx: UnboundedReceiver<i64>,
+) {
+    while let Some(data) = rx.recv().await {
+        let msg_id = MessageId::new(counter.fetch_add(1, Ordering::AcqRel));
+
+        loop {
+            let payload = BroadcastPayload::Broadcast { message: data };
+            info!(?node_id, %data, "broadcast value");
+            match runtime.rpc(msg_id, node_id.clone(), payload).await {
+                Ok(_) => {
+                    break;
+                }
+                Err(e) => {
+                    info!(?node_id, %data, %e, "Failed to broadcast value");
+                    // TODO(xylonx): expotential backoff?
+                }
+            }
+        }
+    }
 }
 
 impl Handler for BroadcastHandler {
@@ -57,15 +90,46 @@ impl Handler for BroadcastHandler {
 
     async fn handle(
         &self,
-        _runtime: &Runtime<Self::T>,
-        _: Option<MessageId>,
+        runtime: &Runtime<Self::T>,
+        meta: MessageMeta,
         payload: Self::T,
     ) -> Result<Option<(Option<MessageId>, Self::T)>> {
-        let msg_id = MessageId::new(self.msg_id.fetch_add(1, Ordering::AcqRel));
+        let boradcast = self
+            .broadcast
+            .get_or_init(|| async {
+                runtime
+                    .node
+                    .cluster
+                    .iter()
+                    .filter(|&n| n != &runtime.node.id)
+                    .map(|node_id| {
+                        let (tx, rx) = mpsc::unbounded_channel();
+                        tokio::spawn({
+                            let runtime2 = runtime.clone();
+                            let node_id2 = node_id.clone();
+                            let counter2 = self.counter.clone();
+                            async move { propagate(counter2, runtime2, node_id2, rx).await }
+                        });
+                        (node_id.clone(), tx)
+                    })
+                    .collect()
+            })
+            .await;
+
+        let msg_id = MessageId::new(self.counter.fetch_add(1, Ordering::AcqRel));
         match &payload {
             BroadcastPayload::Broadcast { message } => {
                 let mut guard = self.messages.write().await;
-                guard.insert(*message);
+                if guard.insert(*message) {
+                    // Propagate data to other nodes
+                    boradcast
+                        .iter()
+                        .filter(|(nid, _)| nid != &meta.src)
+                        .for_each(|(_, tx)| {
+                            tx.send(*message).unwrap();
+                        });
+                }
+
                 Ok(Some((Some(msg_id), BroadcastPayload::BroadcastOk)))
             }
             BroadcastPayload::Read => {
@@ -91,7 +155,7 @@ impl Handler for BroadcastHandler {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
-        .with(fmt::Layer::new().with_writer(std::io::stdout).pretty())
+        .with(fmt::Layer::new().with_writer(std::io::stderr))
         .with(EnvFilter::from_default_env())
         .init();
 
