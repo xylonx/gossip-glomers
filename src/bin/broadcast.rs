@@ -57,7 +57,7 @@ struct BroadcastHandler {
 
     messages: RwLock<HashSet<i64>>,
 
-    broadcast: OnceCell<Vec<(NodeId, UnboundedSender<i64>)>>,
+    neighbors: OnceCell<Vec<(NodeId, UnboundedSender<i64>)>>,
 }
 
 async fn propagate(
@@ -78,7 +78,7 @@ async fn propagate(
                     info!(?node_id2, %data, "broadcast value");
 
                     match tokio::time::timeout(
-                        std::time::Duration::from_secs(30),
+                        std::time::Duration::from_secs(5),
                         runtime2.rpc(msg_id, node_id2.clone(), payload),
                     )
                     .await
@@ -101,6 +101,40 @@ async fn propagate(
     }
 }
 
+impl BroadcastHandler {
+    async fn init_neighbors(
+        &self,
+        runtime: &Runtime<BroadcastPayload>,
+        nodes: &Vec<NodeId>,
+    ) -> &Vec<(NodeId, UnboundedSender<i64>)> {
+        self.neighbors
+            .get_or_init(|| async {
+                nodes
+                    .iter()
+                    .filter(|&n| n != &runtime.node.id)
+                    .map(|node_id| {
+                        let (tx, rx) = mpsc::unbounded_channel();
+                        tokio::spawn(propagate(
+                            self.counter.clone(),
+                            runtime.clone(),
+                            node_id.clone(),
+                            rx,
+                        ));
+                        (node_id.clone(), tx)
+                    })
+                    .collect()
+            })
+            .await
+    }
+
+    fn get_neighbors(&self) -> Result<&Vec<(NodeId, UnboundedSender<i64>)>> {
+        self.neighbors
+            .get()
+            .ok_or(Error::TemporarilyUnavailable)
+            .inspect_err(|_| error!("Failed to get neighbors. It is not init"))
+    }
+}
+
 impl Handler for BroadcastHandler {
     type T = BroadcastPayload;
 
@@ -110,35 +144,15 @@ impl Handler for BroadcastHandler {
         meta: MessageMeta,
         payload: Self::T,
     ) -> Result<Option<(Option<MessageId>, Self::T)>> {
-        let boradcast = self
-            .broadcast
-            .get_or_init(|| async {
-                runtime
-                    .node
-                    .cluster
-                    .iter()
-                    .filter(|&n| n != &runtime.node.id)
-                    .map(|node_id| {
-                        let (tx, rx) = mpsc::unbounded_channel();
-                        tokio::spawn({
-                            let runtime2 = runtime.clone();
-                            let node_id2 = node_id.clone();
-                            let counter2 = self.counter.clone();
-                            async move { propagate(counter2, runtime2, node_id2, rx).await }
-                        });
-                        (node_id.clone(), tx)
-                    })
-                    .collect()
-            })
-            .await;
-
+        // let neighbors = self.init_neighbors(runtime, &runtime.node.cluster).await;
         let msg_id = MessageId::new(self.counter.fetch_add(1, Ordering::AcqRel));
         match &payload {
             BroadcastPayload::Broadcast { message } => {
+                let neighbors = self.get_neighbors()?;
                 let mut guard = self.messages.write().await;
                 if guard.insert(*message) {
                     // Propagate data to other nodes
-                    boradcast
+                    neighbors
                         .iter()
                         .filter(|(nid, _)| nid != &meta.src)
                         .for_each(|(_, tx)| {
@@ -156,7 +170,13 @@ impl Handler for BroadcastHandler {
                     BroadcastPayload::ReadOk { messages: data },
                 )))
             }
-            BroadcastPayload::Topology { topology: _ } => {
+            BroadcastPayload::Topology { topology } => {
+                let neighbors = topology
+                    .get(&runtime.node.id)
+                    .ok_or(Error::MalformedRequest)
+                    .inspect_err(|_| error!("The topology request does not have current node"))?;
+                self.init_neighbors(runtime, neighbors).await;
+
                 Ok(Some((Some(msg_id), BroadcastPayload::TopologyOk)))
             }
 
