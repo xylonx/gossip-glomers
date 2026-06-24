@@ -67,21 +67,37 @@ async fn propagate(
     mut rx: UnboundedReceiver<i64>,
 ) {
     while let Some(data) = rx.recv().await {
-        let msg_id = MessageId::new(counter.fetch_add(1, Ordering::AcqRel));
+        tokio::spawn({
+            let counter2 = counter.clone();
+            let runtime2 = runtime.clone();
+            let node_id2 = node_id.clone();
+            async move {
+                let msg_id = MessageId::new(counter2.fetch_add(1, Ordering::AcqRel));
+                loop {
+                    let payload = BroadcastPayload::Broadcast { message: data };
+                    info!(?node_id2, %data, "broadcast value");
 
-        loop {
-            let payload = BroadcastPayload::Broadcast { message: data };
-            info!(?node_id, %data, "broadcast value");
-            match runtime.rpc(msg_id, node_id.clone(), payload).await {
-                Ok(_) => {
-                    break;
-                }
-                Err(e) => {
-                    info!(?node_id, %data, %e, "Failed to broadcast value");
-                    // TODO(xylonx): expotential backoff?
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        runtime2.rpc(msg_id, node_id2.clone(), payload),
+                    )
+                    .await
+                    {
+                        Ok(result) => match result {
+                            Ok(_) => break,
+                            Err(e) => {
+                                info!(?node_id2, %data, %e, "Failed to broadcast value");
+                                // TODO(xylonx): expotential backoff?
+                            }
+                        },
+                        Err(e) => {
+                            error!(%e, "Failed to broadcast value: timeout");
+                            // TODO(xylonx): expotential backoff?
+                        }
+                    }
                 }
             }
-        }
+        });
     }
 }
 
@@ -159,8 +175,9 @@ async fn main() {
         .with(EnvFilter::from_default_env())
         .init();
 
-    let serve = Serve::new(BroadcastHandler::default());
+    let handler = BroadcastHandler::default();
+    let serve = Serve::new(handler);
     let reader = BufReader::new(tokio::io::stdin());
     let writer = BufWriter::new(tokio::io::stdout());
-    serve.serve(reader, writer).await
+    serve.serve(reader, writer).await;
 }

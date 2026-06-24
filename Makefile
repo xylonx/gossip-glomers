@@ -22,3 +22,7 @@ maelstrom-broadcast-single-node: broadcast-bin
 
 maelstrom-broadcast-multi-node: broadcast-bin
 	$(MAELSTROM) test -w broadcast --bin ./target/debug/broadcast --node-count 5 --time-limit 20 --rate 10
+
+maelstrom-broadcast-fault-tolerant: broadcast-bin
+	$(MAELSTROM) test -w broadcast --bin ./target/debug/broadcast --node-count 5 --time-limit 20 --rate 10 --nemesis partition
+
