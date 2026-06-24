@@ -109,12 +109,17 @@ impl<H: Handler> Serve<H> {
             Some(node) => node,
             None => {
                 if let message::MessagePayload::Init(init) = &msg.body.payload {
-                    // TODO(xylonx): the clone() here seems unnecessary. Message::reply_to only replies on some metadata.
+                    // ensure node_id is inside the cluster
+                    if !init.node_ids.contains(&init.node_id) {
+                        error!(?init, "node is not inside the nodes for init request");
+                        return Err(Error::MalformedRequest);
+                    }
 
                     let node = Node {
                         id: init.node_id.clone(),
                         cluster: init.node_ids.clone(),
                     };
+
                     match self.runtime.set(Runtime::new(node, tx)) {
                         Ok(_) => {
                             return Ok(Some(Message::reply_to(

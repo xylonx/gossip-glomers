@@ -50,31 +50,8 @@ where
         Ok(())
     }
 
-    pub async fn reply_to(
-        &self,
-        dest: NodeId,
-        reply_id: MessageId,
-        msg_id: Option<MessageId>,
-        payload: MessagePayload<T>,
-    ) -> Message<T> {
-        Message {
-            src: self.node.id.clone(),
-            dest,
-            body: MessageBody {
-                msg_id,
-                in_reply_to: Some(reply_id),
-                payload,
-            },
-        }
-    }
-
-    async fn call(&self, msg: Message<T>) -> Result<T> {
-        let msg_id = msg
-            .body
-            .msg_id
-            .ok_or(Error::MalformedRequest)
-            .inspect_err(|_| error!("Rpc call must contains msg_id"))?;
-
+    pub async fn call(&self, msg_id: MessageId, dest_id: NodeId, payload: T) -> Result<T> {
+        let msg = self.call_msg(dest_id, msg_id, payload);
         self.output
             .send(msg)
             .inspect_err(|e| error!(%e, "Failed to send message"))
