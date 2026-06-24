@@ -50,8 +50,19 @@ where
         Ok(())
     }
 
-    pub async fn call(&self, msg_id: MessageId, dest_id: NodeId, payload: T) -> Result<T> {
-        let msg = self.call_msg(dest_id, msg_id, payload);
+    /// call only sends message to to dest without waiting for response.
+    pub async fn call(&self, dest: NodeId, payload: T) -> Result<()> {
+        let msg = self.call_msg(dest, None, payload);
+        self.output
+            .send(msg)
+            .inspect_err(|e| error!(%e, "Failed to send message"))
+            .or(Err(Error::Crash))?;
+        Ok(())
+    }
+
+    /// rpc sends message to dest and wait for response.
+    pub async fn rpc(&self, msg_id: MessageId, dest: NodeId, payload: T) -> Result<T> {
+        let msg = self.call_msg(dest, Some(msg_id), payload);
         self.output
             .send(msg)
             .inspect_err(|e| error!(%e, "Failed to send message"))
@@ -79,12 +90,12 @@ where
         }
     }
 
-    fn call_msg(&self, dest: NodeId, msg_id: MessageId, payload: T) -> Message<T> {
+    fn call_msg(&self, dest: NodeId, msg_id: Option<MessageId>, payload: T) -> Message<T> {
         Message {
             src: self.node.id.clone(),
             dest,
             body: MessageBody {
-                msg_id: Some(msg_id),
+                msg_id,
                 in_reply_to: None,
                 payload: super::message::MessagePayload::Custom(payload),
             },

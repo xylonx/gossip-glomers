@@ -19,7 +19,7 @@ use crate::maelstrom::{
     runtime::Runtime,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct NodeId(String);
 
 impl NodeId {
